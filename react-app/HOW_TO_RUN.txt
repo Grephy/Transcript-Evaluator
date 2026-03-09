@@ -1,0 +1,106 @@
+========================================
+HOW TO RUN THE TRANSCRIPTIQ APP
+========================================
+
+PREREQUISITES:
+- Node.js (v18 or higher) - Download from https://nodejs.org/
+- npm (comes with Node.js)
+
+SETUP INSTRUCTIONS:
+
+STEP 1: Start the Backend Server
+================================
+1. Open a terminal and navigate to the backend directory:
+   cd backend
+
+2. Install dependencies (first time only):
+   npm install
+
+3. Start the backend server:
+   npm start
+
+   You should see:
+   ✅ TranscriptIQ Backend running on http://localhost:5001
+
+   The backend will now listen for transcript uploads and process them.
+
+STEP 2: Start the React Frontend
+=================================
+1. Open a NEW terminal and navigate to the react-app directory:
+   cd react-app
+
+2. Install dependencies (first time only):
+   npm install
+
+3. Start the development server:
+   npm run dev
+
+4. Open your browser and go to:
+   http://localhost:5173/
+
+The app should now be running and fully interactive. You can:
+- Upload transcript files (PDF, JPG, PNG, CSV, XLSX, TXT)
+- Select a university from the dropdown
+- Process and review the transcript
+- See the converted GPA and credit mappings
+- Download PDF reports with converted GPAs and weighted GPA
+
+STOPPING THE SERVERS:
+Press Ctrl+C in each terminal to stop the servers:
+- Terminal 1 (Backend): Ctrl+C
+- Terminal 2 (Frontend): Ctrl+C
+
+REBUILDING/UPDATING DEPENDENCIES:
+If you encounter issues, try:
+npm install --force
+Then run npm start (backend) and npm run dev (frontend) again.
+
+VERIFYING BACKEND AVAILABILITY:
+Before uploading files, verify the backend is running:
+curl http://localhost:5001/api/health
+
+Expected response:
+{"status":"Backend API is running","timestamp":"..."}
+
+BUILD FOR PRODUCTION:
+In the react-app directory:
+npm run build
+This creates an optimized version in the dist/ folder.
+
+ARCHITECTURE:
+- Backend (Node.js/Express): http://localhost:5001
+  ├─ POST /api/upload - Upload and process transcript files
+  ├─ POST /api/parse-text - Parse transcript text directly
+  └─ GET /api/health - Health check
+
+- Frontend (React/Vite): http://localhost:5173
+  ├─ File upload interface
+  ├─ University selection
+  ├─ Real-time processing display
+  └─ PDF report generation
+
+SUPPORTED FEATURES:
+- Multiple input formats: PDF, Images (JPG/PNG), CSV, Excel, Plain Text
+- OCR processing for scanned transcripts
+- University format detection and parsing
+- WES-standard GPA conversion (percentage → 4.0 scale)
+- Weighted GPA calculation based on course credits
+- US letter grade mapping (A, A-, B+, B, etc.)
+- Course credit normalization
+- Real-time progress tracking
+- Dark theme UI with green accents
+- PDF reports with converted GPAs
+
+SUPPORTED UNIVERSITIES:
+- IIT Bombay
+- Delhi University
+- VTU (Visvesvaraya Technological University)
+- Anna University
+- Mumbai University
+- JNTU (Jawaharlal Nehru Technological University)
+- Pune University
+- Osmania University
+
+For more information, check:
+- Backend code: backend/server.js, backend/routes/upload.js, backend/utils/
+- Frontend code: src/App.jsx

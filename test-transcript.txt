@@ -1,0 +1,32 @@
+TRANSCRIPT OF RECORDS
+Student Name: John Doe
+Student ID: 2021001
+University: Sample University
+Program: Bachelor of Technology in Computer Science
+
+SEMESTER 1
+Course Code: CS101
+Course Name: Introduction to Programming
+Credits: 4
+Grade: 87%
+
+Course Code: MA101
+Course Name: Mathematics I
+Credits: 4
+Grade: 91%
+
+SEMESTER 2
+Course Code: CS201
+Course Name: Data Structures
+Credits: 3
+Grade: 78%
+
+Course Code: EC201
+Course Name: Digital Electronics
+Credits: 3
+Grade: 83%
+
+Course Code: MA201
+Course Name: Mathematics II
+Credits: 4
+Grade: 76%

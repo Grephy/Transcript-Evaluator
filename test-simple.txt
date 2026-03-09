@@ -1,0 +1,4 @@
+Course Code: CS101
+Course Name: Introduction to Programming
+Credits: 4
+Grade: 87%
