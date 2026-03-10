@@ -174,44 +174,48 @@ async function parseWithAI(rawText, university = "Unknown") {
 
   const courses = extractJSON(responseText);
   if (!courses || courses.length === 0) {
-    throw new Error("Ollama returned no courses. Model may need more context or a different prompt.");
+    throw new Error("Ollama returned no courses. The OCR text may be too noisy for the model.");
+  }
+  // Warn about missing grades but don't fail
+  const missingGrade = courses.filter(c => !c.grade || c.grade === "").length;
+  if (missingGrade > 0) {
+    console.warn(`⚠ ${missingGrade} courses have missing grades (OCR noise likely)`);
   }
 
   const normalized = courses
-    .filter(c => c.title && c.grade)
+    .filter(c => c.title && isRealCourse(c.title))
     .map((c, i) => ({
       code: c.code || `SUB${String(i + 1).padStart(3, "0")}`,
       title: String(c.title).trim(),
       grade: normalizeGrade(String(c.grade), gradeScale.type),
       credits: parseFloat(c.credits) || 3,
       gradeScaleType: gradeScale.type,
-    }));
+    }))
+    // Deduplicate by title (keep first occurrence)
+    .filter((c, i, arr) => arr.findIndex(x => x.title.toLowerCase() === c.title.toLowerCase()) === i);
 
   console.log(`→ Ollama extracted ${normalized.length} courses`);
   return normalized;
 }
 
 function buildPrompt(rawText, university, gradeScale) {
-  return `You are extracting course data from a university transcript OCR scan.
+  return `You are extracting course data from a university transcript. The OCR text below may be noisy — use context clues to read course names and grades.
 
 University: ${university}
 Grading System: ${gradeScale.note}
 
-TASK: Extract EVERY subject/course listed in the transcript below.
-Return ONLY a JSON array. No explanation. No markdown. No backticks. No extra text.
+TASK: Extract EVERY subject/course as a JSON array. ONLY return the JSON. No explanation, no markdown, no backticks.
 
 Rules:
-- Include ALL courses, even if the grade is missing (use "" for missing grades)
-- "code": course/subject code if visible, else auto-generate "SUB001", "SUB002" etc.
-- "title": clean subject/course name — fix obvious OCR typos but keep the real name
-- "grade": extract the grade EXACTLY as it appears (e.g. "B+", "C", "A", "D"). Do NOT convert or interpret.
-- "credits": credit hours as a number, default 3 if not shown
-- Do NOT merge or split courses — one object per course row
+- "code": SUB001, SUB002... in order
+- "title": the subject name. Clean OCR errors (e.g. "ManctngMansgement" → "Marketing Management"). Do NOT invent courses not in the text.
+- "grade": exactly one of: A+, A, B+, B, C, D, E — copy directly from the text. Use "" only if truly unreadable.
+- "credits": 3 for all
+- Each real course row = one JSON object. Do NOT duplicate courses.
+- Do NOT include: student info, totals, CGPA, SGPA, headers, "Sem", "Year-I", "Year-II", "Management" alone
 
-IGNORE: student name, enrollment number, university name, CGPA, SGPA, semester totals, table headers, signatures.
-
-Example output for this grading system:
-[{"code":"SUB001","title":"Management Principles","grade":"B","credits":3},{"code":"SUB002","title":"Financial Management","grade":"D","credits":3}]
+Bad example (do not do this): {"title":"Management","grade":"C"} ← too vague, not a real course title
+Good example: {"title":"Strategic Management","grade":"C"}
 
 TRANSCRIPT TEXT:
 ${rawText}
@@ -328,6 +332,26 @@ function normalizeGrade(grade, scaleType = "percentage") {
   }
 
   return s;
+}
+
+
+/**
+ * Filter out garbage course titles from OCR hallucinations
+ */
+function isRealCourse(title) {
+  if (!title || title.length < 5) return false;
+  const t = title.trim();
+  // Too short or just a number
+  if (/^\d+$/.test(t)) return false;
+  // Generic single words that are clearly not course titles
+  const garbage = /^(management|sem|subject|name|credit|grade|total|cgpa|sgpa|year|course)$/i;
+  if (garbage.test(t)) return false;
+  // OCR garbage — mostly symbols or numbers
+  const alphaRatio = (t.match(/[a-zA-Z]/g) || []).length / t.length;
+  if (alphaRatio < 0.5) return false;
+  // "Management IV", "Management III" etc — roman numeral hallucinations
+  if (/^management\s+(i{1,3}|iv|v|vi|vii|viii)$/i.test(t)) return false;
+  return true;
 }
 
 module.exports = {
