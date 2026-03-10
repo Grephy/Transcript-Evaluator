@@ -240,7 +240,7 @@ function detectUniversity(text) {
     {
       name: "Asian Business School",
       keywords: ["Asian Business School", "ABS PGDM", "abs.edu.in", "ASIAN BUSINESS SCHOOL"],
-      fuzzy: ["asian business", "abs.edu", "asean business", "asian busin"],
+      fuzzy: ["asian business", "abs.edu", "asean business", "asian busin", "busiiess", "sgh001", "abs/pgdm", "aicte id"],
     },
     {
       name: "IIT Bombay",
