@@ -35,8 +35,7 @@ const LETTER_DISPLAY = {
   "F": "F", "E": "F",
 };
 
-// 10-point grade scale (ABS, many Indian universities) → 4.0 GPA
-// Based on ABS grading: A+=10, A=9, B+=8, B=7, C=6, D=5, E=0
+// 10-point numeric scale (IIT-style) → 4.0 GPA
 const TEN_POINT_TO_GPA = [
   { min: 9.5, max: 10,  gpa: 4.0, letter: "A"  },
   { min: 8.5, max: 9.4, gpa: 3.7, letter: "A-" },
@@ -48,14 +47,38 @@ const TEN_POINT_TO_GPA = [
 ];
 
 /**
- * Master converter — detects grade type and converts to 4.0 GPA
+ * ABS / 10-point letter scale → WES 4.0 GPA
+ * ABS: A+(90-100%)=10pts, A(80-89%)=9pts, B+(70-79%)=8pts,
+ *      B(60-69%)=7pts, C(50-59%)=6pts, D(40-49%)=5pts, E(≤39%)=0pts
+ * WES maps underlying percentage ranges, not letter-for-letter.
  */
-function convertToGPA(grade, university = null) {
-  if (!grade) return { gpa: 0.0, usGrade: "F" };
+const ABS_LETTER_TO_WES = {
+  "A+": { gpa: 4.0, usGrade: "A"  },
+  "A":  { gpa: 3.7, usGrade: "A-" },
+  "B+": { gpa: 3.0, usGrade: "B"  },
+  "B":  { gpa: 2.3, usGrade: "C+" },
+  "C":  { gpa: 1.7, usGrade: "C-" },
+  "D":  { gpa: 1.0, usGrade: "D"  },
+  "E":  { gpa: 0.0, usGrade: "F"  },
+};
+
+/**
+ * Master converter — detects grade type and converts to 4.0 GPA.
+ * scaleType hint from aiParser: "10point_letter" | "10point_numeric" | "percentage" | null
+ */
+function convertToGPA(grade, university = null, scaleType = null) {
+  if (!grade || grade === "") return { gpa: 0.0, usGrade: "N/A" };
 
   const s = String(grade).trim().toUpperCase().replace("%", "");
 
-  // 1. Letter grade (A, B+, C-, etc.)
+  // 1. ABS-style 10-point letter scale (explicitly flagged by aiParser)
+  if (scaleType === "10point_letter") {
+    const result = ABS_LETTER_TO_WES[s];
+    if (result) return result;
+    return { gpa: 0.0, usGrade: "N/A" };
+  }
+
+  // 2. Standard US letter grade (A, B+, C-, etc.)
   if (/^[A-F][+-]?$/.test(s) || s === "E") {
     const gpa = LETTER_TO_GPA[s] ?? 0.0;
     const usGrade = LETTER_DISPLAY[s] ?? "F";
@@ -65,18 +88,14 @@ function convertToGPA(grade, university = null) {
   const num = parseFloat(s);
   if (isNaN(num)) return { gpa: 0.0, usGrade: "F" };
 
-  // 2. 10-point scale (0–10)
-  if (num <= 10 && num >= 0 && !String(grade).includes("%") && num !== Math.floor(num * 10) / 10 || num <= 10) {
-    // Distinguish 10-point from percentage:
-    // If original had % → percentage. If <= 10 and no % → likely 10-point scale
-    if (!String(grade).includes("%") && num <= 10) {
-      for (const row of TEN_POINT_TO_GPA) {
-        if (num >= row.min && num <= row.max) return { gpa: row.gpa, usGrade: row.letter };
-      }
+  // 3. Explicit 10-point numeric scale (IITs)
+  if (scaleType === "10point_numeric" || (!String(grade).includes("%") && num <= 10)) {
+    for (const row of TEN_POINT_TO_GPA) {
+      if (num >= row.min && num <= row.max) return { gpa: row.gpa, usGrade: row.letter };
     }
   }
 
-  // 3. Percentage (0–100)
+  // 4. Percentage (0–100)
   for (const row of PERCENTAGE_TO_GPA) {
     if (num >= row.min && num <= row.max) return { gpa: row.gpa, usGrade: row.letter };
   }
@@ -113,8 +132,10 @@ function calculateWeightedGPA(courses) {
 
 function processCoursesWithGPA(courses, university = null) {
   return courses.map((course, i) => {
-    const grade = course.grade || "0";
-    const { gpa, usGrade } = convertToGPA(grade, university);
+    const grade = course.grade || "";
+    // scaleType may be set by aiParser on each course object
+    const scaleType = course.gradeScaleType || null;
+    const { gpa, usGrade } = convertToGPA(grade, university, scaleType);
     return {
       ...course,
       code: course.code || `SUB${String(i+1).padStart(3,"0")}`,

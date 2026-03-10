@@ -234,24 +234,84 @@ function isCompleteCourse(c) {
 }
 
 function detectUniversity(text) {
+  // Each entry has exact keywords AND fuzzy fragments that survive OCR noise.
+  // Fuzzy fragments are short tokens that appear reliably even in garbled text.
   const universities = [
-    { name: "IIT Bombay", keywords: ["IIT Bombay", "Indian Institute of Technology Bombay", "IITB"] },
-    { name: "IIT Delhi", keywords: ["IIT Delhi", "Indian Institute of Technology Delhi", "IITD"] },
-    { name: "IIT Madras", keywords: ["IIT Madras", "Indian Institute of Technology Madras"] },
-    { name: "Delhi University", keywords: ["Delhi University", "University of Delhi"] },
-    { name: "VTU", keywords: ["VTU", "Visvesvaraya Technological University"] },
-    { name: "Anna University", keywords: ["Anna University"] },
-    { name: "Mumbai University", keywords: ["Mumbai University", "University of Mumbai"] },
-    { name: "JNTU", keywords: ["JNTU", "Jawaharlal Nehru Technological University"] },
-    { name: "Pune University", keywords: ["Pune University", "University of Pune", "Savitribai Phule"] },
-    { name: "Osmania University", keywords: ["Osmania University"] },
-    { name: "Bangalore University", keywords: ["Bangalore University", "Bengaluru University"] },
+    {
+      name: "Asian Business School",
+      keywords: ["Asian Business School", "ABS PGDM", "abs.edu.in", "ASIAN BUSINESS SCHOOL"],
+      fuzzy: ["asian business", "abs.edu", "asean business", "asian busin"],
+    },
+    {
+      name: "IIT Bombay",
+      keywords: ["IIT Bombay", "Indian Institute of Technology Bombay", "IITB"],
+      fuzzy: ["iit bombay", "iitb"],
+    },
+    {
+      name: "IIT Delhi",
+      keywords: ["IIT Delhi", "Indian Institute of Technology Delhi", "IITD"],
+      fuzzy: ["iit delhi", "iitd"],
+    },
+    {
+      name: "IIT Madras",
+      keywords: ["IIT Madras", "Indian Institute of Technology Madras"],
+      fuzzy: ["iit madras"],
+    },
+    {
+      name: "Delhi University",
+      keywords: ["Delhi University", "University of Delhi"],
+      fuzzy: ["university of delhi", "delhi university"],
+    },
+    {
+      name: "VTU",
+      keywords: ["VTU", "Visvesvaraya Technological University"],
+      fuzzy: ["visvesvaraya", "vtu.ac.in"],
+    },
+    {
+      name: "Anna University",
+      keywords: ["Anna University"],
+      fuzzy: ["anna university", "annauniv"],
+    },
+    {
+      name: "Mumbai University",
+      keywords: ["Mumbai University", "University of Mumbai"],
+      fuzzy: ["university of mumbai", "mu.ac.in"],
+    },
+    {
+      name: "JNTU",
+      keywords: ["JNTU", "Jawaharlal Nehru Technological University"],
+      fuzzy: ["jawaharlal nehru tech", "jntu"],
+    },
+    {
+      name: "Pune University",
+      keywords: ["Pune University", "University of Pune", "Savitribai Phule"],
+      fuzzy: ["savitribai", "unipune"],
+    },
+    {
+      name: "Osmania University",
+      keywords: ["Osmania University"],
+      fuzzy: ["osmania"],
+    },
+    {
+      name: "Bangalore University",
+      keywords: ["Bangalore University", "Bengaluru University"],
+      fuzzy: ["bangalore university", "bengaluru university"],
+    },
   ];
 
   const textLower = text.toLowerCase();
+
+  // Pass 1: exact keyword match
   for (const uni of universities) {
     for (const keyword of uni.keywords) {
       if (textLower.includes(keyword.toLowerCase())) return uni.name;
+    }
+  }
+
+  // Pass 2: fuzzy fragment match (handles OCR-mangled text)
+  for (const uni of universities) {
+    for (const fragment of (uni.fuzzy || [])) {
+      if (textLower.includes(fragment.toLowerCase())) return uni.name;
     }
   }
   return "Unknown University";
