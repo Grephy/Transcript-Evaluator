@@ -50,7 +50,7 @@ function detectGradeScale(text) {
 }
 
 // ─── OCR text cleaner ─────────────────────────────────────────────────────────
-function cleanOCRText(raw, maxChars = 4000) {
+function cleanOCRText(raw, maxChars = 8000) {
   const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
   const freq = {};
   for (const l of lines) freq[l] = (freq[l] || 0) + 1;
@@ -60,16 +60,18 @@ function cleanOCRText(raw, maxChars = 4000) {
     if (freq[l] > noiseThreshold) return false;
     if (l.length < 3) return false;
     if (/^[-=_|~*#^]{3,}$/.test(l)) return false;
+    // Skip lines that are pure whitespace/dots (layout artifact)
+    if (/^[\s.]+$/.test(l)) return false;
+    // Skip lines with very low alpha ratio (likely layout noise)
+    const alphaCount = (l.match(/[a-zA-Z]/g) || []).length;
+    if (alphaCount < 2) return false;
     return true;
   });
 
   const deduped = cleaned.filter((l, i) => i === 0 || l !== cleaned[i - 1]);
   const result = deduped.join("\n");
 
-  if (result.length > maxChars) {
-    const half = Math.floor(maxChars / 2);
-    return result.slice(0, half) + "\n...[continues]...\n" + result.slice(result.length - half);
-  }
+  // Don't truncate — send full text to Ollama for accuracy
   return result;
 }
 
@@ -226,31 +228,30 @@ async function parseWithAI(rawText, university = "Unknown") {
 
 function buildPrompt(text, scale) {
   const scaleDesc = {
-    "10point_letter": "Indian 10-point LETTER scale. Grades are: A+, A, B+, B, C, D, E. Extract the letter exactly.",
-    "10point_numeric": "Indian/IIT 10-point NUMERIC scale. Grades are numbers like 8, 9.5, 7. Extract the number.",
-    "percentage": "Percentage scale. Grades are numbers like 78, 85, 92. Extract the number.",
-    "us_letter": "US letter grade scale. Grades are A, A-, B+, B, C+, C, D, F. Extract the letter exactly.",
+    "10point_letter": "Indian 10-point LETTER scale. Grades are: A+, A, B+, B, C, D, E.",
+    "10point_numeric": "Indian/IIT 10-point NUMERIC scale. Grades are numbers like 8, 9.5.",
+    "percentage":      "Percentage scale. Grades are numbers like 78, 85, 92.",
+    "us_letter":       "US letter grade scale. Grades are A, A-, B+, B, C+, C, D, F.",
   }[scale] || "Extract the grade exactly as shown.";
 
-  return `Extract all courses from this university transcript. Return ONLY a JSON array. No explanation, no markdown, no backticks.
+  return `Extract all courses from this university transcript. Return ONLY a JSON array. No markdown, no explanation, no backticks.
 
-Grading system in this transcript: ${scaleDesc}
+Grading system: ${scaleDesc}
 
-This transcript has TWO COLUMNS side by side. The OCR merges them into one line. Example:
-  "Management Principles & Business Statistics & Quantitative"
-  "3 B 3 C"
-means TWO courses: "Management Principles" grade B, AND "Business Statistics & Quantitative Techniques" grade C.
-ALWAYS split merged two-column rows into SEPARATE objects.
+This transcript has TWO COLUMNS of courses side by side. The text preserves spatial layout with spaces.
+The LEFT half of each line = one course. The RIGHT half = a separate course.
+Course names sometimes wrap to the next line — the grade and credit number (3) appear after the name.
 
-Each course object:
-{"code":"SUB001","title":"Full Course Name","grade":"B","credits":3}
+Reading rules:
+1. A course entry looks like: "Course Name   3   GRADE" (name, then credit number, then grade letter)
+2. If a course name wraps to the next line, the credit+grade are on the NEXT line. Combine them.
+3. LEFT side and RIGHT side are always SEPARATE courses — never merge them into one title.
+4. Fix OCR typos: StrateBic→Strategic, Analvtics→Analytics, Marketins→Marketing, Aoolications→Applications, Manasement→Management, Srrall→Small, Surnnrer→Summer, lnternship→Internship, Conrmunication→Communication, Comorate→Corporate, Legai→Legal, lntegrated→Integrated, lnternational→International, Proj ect→Project, Project.Management→Project Management
+5. Grade: copy exactly (A+, A, B+, B, C, D, E)
+6. Credits: the number shown, default 3
+7. SKIP: student name, enrollment number, CGPA, SGPA, Year-I/II, semester headers, grade scale table, standalone I/II/III/IV
 
-Rules:
-- One object per course. Split two-column rows.
-- Fix obvious OCR typos in titles (e.g. "StrateBic"→"Strategic")
-- Grade: copy exactly as shown (A+, B, C, D, E, or number)
-- Credits: number shown, default 3
-- SKIP: student name, enrollment number, CGPA, SGPA, semester headers, grade scale table rows, standalone numbers
+Each object: {"code":"SUB001","title":"Full Course Name","grade":"B","credits":3}
 
 TRANSCRIPT:
 ${text}

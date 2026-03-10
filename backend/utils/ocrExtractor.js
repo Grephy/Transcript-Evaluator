@@ -13,20 +13,9 @@ const os = require("os");
  * 2. If little/no text extracted, convert pages to images with pdftoppm then OCR each page
  */
 async function extractTextFromPDF(filePath) {
-  // Step 1: pdfplumber via temp Python script (handles watermarked/complex PDFs best)
+  // Step 1: pdfplumber via _pdfextract.py (two-column aware, handles watermarked PDFs)
   try {
     const scriptPath = path.join(__dirname, "_pdfextract.py");
-    if (!fs.existsSync(scriptPath)) {
-      fs.writeFileSync(scriptPath,
-        "import pdfplumber, sys\n" +
-        "with pdfplumber.open(sys.argv[1]) as pdf:\n" +
-        "    text = ''\n" +
-        "    for page in pdf.pages:\n" +
-        "        t = page.extract_text()\n" +
-        "        if t: text += t + '\\n\\n'\n" +
-        "    print(text)\n"
-      );
-    }
     const { execFileSync } = require("child_process");
     const result = execFileSync("python3", [scriptPath, filePath],
       { timeout: 30000, maxBuffer: 2 * 1024 * 1024 });

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import jsPDF from "jspdf";
 
 const STEPS = ["Upload", "Processing", "Review", "Download"];
@@ -244,82 +244,336 @@ function ProcessingView({ onDone }) {
   );
 }
 
+// ─── WES Conversion Tables (mirrored from aiParser.js for live recalculation) ──
+const WES_SCALES = {
+  "10point_letter": {
+    label: "Indian 10-Point Letter Scale",
+    note: "Used by ABS, NMIMS and similar institutions",
+    rows: [
+      { orig: "A+", range: "90–100%", wes: "A",  gpa: 4.0 },
+      { orig: "A",  range: "80–89%",  wes: "B+", gpa: 3.3 },
+      { orig: "B+", range: "70–79%",  wes: "B-", gpa: 2.7 },
+      { orig: "B",  range: "60–69%",  wes: "C",  gpa: 2.0 },
+      { orig: "C",  range: "50–59%",  wes: "D+", gpa: 1.3 },
+      { orig: "D",  range: "40–49%",  wes: "D-", gpa: 0.7 },
+      { orig: "E",  range: "< 40%",   wes: "F",  gpa: 0.0 },
+    ],
+  },
+  "10point_numeric": {
+    label: "IIT / NIT 10-Point Numeric Scale (CGPA/SPI)",
+    note: "Used by IITs, NITs, BITS Pilani",
+    rows: [
+      { orig: "9.5–10", range: "Outstanding", wes: "A",  gpa: 4.0 },
+      { orig: "8.5–9.4", range: "Excellent",  wes: "A-", gpa: 3.7 },
+      { orig: "7.5–8.4", range: "Very Good",  wes: "B+", gpa: 3.3 },
+      { orig: "6.5–7.4", range: "Good",       wes: "B",  gpa: 3.0 },
+      { orig: "5.5–6.4", range: "Average",    wes: "C+", gpa: 2.3 },
+      { orig: "4.5–5.4", range: "Pass",       wes: "C-", gpa: 1.7 },
+      { orig: "< 4.5",   range: "Fail",       wes: "F",  gpa: 0.0 },
+    ],
+  },
+  "percentage": {
+    label: "Percentage Scale",
+    note: "Used by VTU, Anna University, Mumbai University, JNTU and most state universities",
+    rows: [
+      { orig: "90–100%", range: "Outstanding", wes: "A",  gpa: 4.0 },
+      { orig: "85–89%",  range: "Excellent",   wes: "A-", gpa: 3.7 },
+      { orig: "80–84%",  range: "Very Good",   wes: "B+", gpa: 3.3 },
+      { orig: "75–79%",  range: "Good",        wes: "B",  gpa: 3.0 },
+      { orig: "70–74%",  range: "Above Avg",   wes: "B-", gpa: 2.7 },
+      { orig: "65–69%",  range: "Average",     wes: "C+", gpa: 2.3 },
+      { orig: "60–64%",  range: "Pass",        wes: "C",  gpa: 2.0 },
+      { orig: "55–59%",  range: "Pass",        wes: "C-", gpa: 1.7 },
+      { orig: "50–54%",  range: "Pass",        wes: "D+", gpa: 1.3 },
+      { orig: "45–49%",  range: "Pass",        wes: "D",  gpa: 1.0 },
+      { orig: "< 45%",   range: "Fail",        wes: "F",  gpa: 0.0 },
+    ],
+  },
+  "us_letter": {
+    label: "US Letter Grade Scale",
+    note: "Standard US / international scale",
+    rows: [
+      { orig: "A / A+", range: "93–100%", wes: "A",  gpa: 4.0 },
+      { orig: "A-",     range: "90–92%",  wes: "A-", gpa: 3.7 },
+      { orig: "B+",     range: "87–89%",  wes: "B+", gpa: 3.3 },
+      { orig: "B",      range: "83–86%",  wes: "B",  gpa: 3.0 },
+      { orig: "B-",     range: "80–82%",  wes: "B-", gpa: 2.7 },
+      { orig: "C+",     range: "77–79%",  wes: "C+", gpa: 2.3 },
+      { orig: "C",      range: "73–76%",  wes: "C",  gpa: 2.0 },
+      { orig: "D",      range: "60–69%",  wes: "D",  gpa: 1.0 },
+      { orig: "F",      range: "< 60%",   wes: "F",  gpa: 0.0 },
+    ],
+  },
+};
+
+function reConvertGrade(grade, scaleType) {
+  const scale = WES_SCALES[scaleType];
+  if (!scale) return { usGrade: "N/A", convertedGPA: 0 };
+  const g = String(grade).trim().toUpperCase().replace("%", "");
+
+  if (scaleType === "10point_letter") {
+    const MAP = { "A+": [4.0,"A"], "A": [3.3,"B+"], "B+": [2.7,"B-"], "B": [2.0,"C"], "C": [1.3,"D+"], "D": [0.7,"D-"], "E": [0.0,"F"] };
+    const r = MAP[g]; return r ? { convertedGPA: r[0], usGrade: r[1] } : { convertedGPA: 0, usGrade: "N/A" };
+  }
+  if (scaleType === "us_letter") {
+    const MAP = { "A+": [4.0,"A"], "A": [4.0,"A"], "A-": [3.7,"A-"], "B+": [3.3,"B+"], "B": [3.0,"B"], "B-": [2.7,"B-"], "C+": [2.3,"C+"], "C": [2.0,"C"], "C-": [1.7,"C-"], "D+": [1.3,"D+"], "D": [1.0,"D"], "F": [0.0,"F"], "E": [0.0,"F"] };
+    const r = MAP[g]; return r ? { convertedGPA: r[0], usGrade: r[1] } : { convertedGPA: 0, usGrade: "N/A" };
+  }
+  const n = parseFloat(g);
+  if (!isNaN(n)) {
+    if (scaleType === "10point_numeric") {
+      const ROWS = [[9.5,10,4.0,"A"],[8.5,9.4,3.7,"A-"],[7.5,8.4,3.3,"B+"],[6.5,7.4,3.0,"B"],[5.5,6.4,2.3,"C+"],[4.5,5.4,1.7,"C-"],[0,4.4,0.0,"F"]];
+      for (const [lo,hi,gpa,lt] of ROWS) if (n >= lo && n <= hi) return { convertedGPA: gpa, usGrade: lt };
+    } else {
+      const ROWS = [[90,100,4.0,"A"],[85,89,3.7,"A-"],[80,84,3.3,"B+"],[75,79,3.0,"B"],[70,74,2.7,"B-"],[65,69,2.3,"C+"],[60,64,2.0,"C"],[55,59,1.7,"C-"],[50,54,1.3,"D+"],[45,49,1.0,"D"],[0,44,0.0,"F"]];
+      for (const [lo,hi,gpa,lt] of ROWS) if (n >= lo && n <= hi) return { convertedGPA: gpa, usGrade: lt };
+    }
+  }
+  return { convertedGPA: 0, usGrade: "N/A" };
+}
+
+function isSuspiciousTitle(title) {
+  if (!title) return false;
+  // Two common course subjects joined — likely OCR merge
+  const SUBJECTS = ["management","statistics","behaviour","techniques","marketing","finance","economics","communication","governance","foundations"];
+  const words = title.toLowerCase().split(" ");
+  let subjectCount = 0;
+  for (const w of words) {
+    if (SUBJECTS.some(s => w.startsWith(s))) subjectCount++;
+  }
+  if (subjectCount >= 3) return true;
+  // Title too long (merged)
+  if (title.length > 60) return true;
+  return false;
+}
+
 function ReviewView({ onDownload, generatePDF, courses, university }) {
-  const totalUSCredits = courses.reduce((s, c) => s + (c.usCredits || c.credits || 3), 0);
-  const weightedGPA = courses.reduce((s, c) => s + ((c.convertedGPA || c.gpa || 3.0) * (c.usCredits || c.credits || 3)), 0) / totalUSCredits;
+  const scaleType = courses[0]?.gradeScaleType || "10point_letter";
+  const scale = WES_SCALES[scaleType] || WES_SCALES["10point_letter"];
+
+  // Editable local copy
+  const [rows, setRows] = useState(() =>
+    courses.map(c => ({ ...c }))
+  );
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [showFormula, setShowFormula] = useState(false);
+  const [editDraft, setEditDraft] = useState({});
+
+  const totalUSCredits = rows.reduce((s, c) => s + (c.usCredits || 3), 0);
+  const validRows = rows.filter(c => c.convertedGPA > 0);
+  const weightedGPA = validRows.length > 0
+    ? validRows.reduce((s, c) => s + c.convertedGPA * (c.usCredits || 3), 0)
+      / validRows.reduce((s, c) => s + (c.usCredits || 3), 0)
+    : 0;
+
+  const flaggedCount = rows.filter(c => isSuspiciousTitle(c.title) || !c.grade || c.grade === "").length;
+
+  function startEdit(i) {
+    setEditDraft({ title: rows[i].title, grade: rows[i].grade, credits: rows[i].usCredits || 3 });
+    setEditingIdx(i);
+  }
+
+  function saveEdit(i) {
+    const updated = [...rows];
+    const { gpa, letter } = (() => {
+      const r = reConvertGrade(editDraft.grade, scaleType);
+      return { gpa: r.convertedGPA, letter: r.usGrade };
+    })();
+    updated[i] = {
+      ...updated[i],
+      title: editDraft.title,
+      grade: editDraft.grade,
+      usCredits: parseFloat(editDraft.credits) || 3,
+      convertedGPA: gpa,
+      usGrade: letter,
+    };
+    setRows(updated);
+    setEditingIdx(null);
+  }
+
+  function deleteRow(i) {
+    setRows(rows.filter((_, idx) => idx !== i));
+    if (editingIdx === i) setEditingIdx(null);
+  }
+
+  function addRow() {
+    setRows([...rows, {
+      code: `SUB${String(rows.length + 1).padStart(3,"0")}`,
+      title: "New Course",
+      grade: "",
+      usCredits: 3,
+      convertedGPA: 0,
+      usGrade: "N/A",
+      gradeScaleType: scaleType,
+    }]);
+    setEditingIdx(rows.length);
+    setEditDraft({ title: "New Course", grade: "", credits: 3 });
+  }
+
+  const gpaColor = (g) => g >= 3.7 ? "#00C896" : g >= 3.0 ? "#FFC800" : g >= 2.0 ? "#FF9F40" : "#FF6464";
 
   return (
     <div>
-      <div style={{
-        display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28
-      }}>
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 20 }}>
         {[
           { label: "Cumulative GPA", value: weightedGPA.toFixed(2), sub: "on 4.0 scale" },
           { label: "US Credit Hours", value: totalUSCredits, sub: "semester hours" },
-          { label: "Courses Mapped", value: courses.length, sub: "successfully" },
+          { label: "Courses", value: `${rows.length}${flaggedCount > 0 ? ` (${flaggedCount} ⚠)` : ""}`, sub: flaggedCount > 0 ? "flagged for review" : "all verified" },
         ].map(s => (
-          <div key={s.label} style={{
-            background: "#0f0f0f", borderRadius: 12, padding: 16, textAlign: "center",
-            border: "1px solid #1a1a1a"
-          }}>
+          <div key={s.label} style={{ background: "#0f0f0f", borderRadius: 12, padding: 16, textAlign: "center", border: "1px solid #1a1a1a" }}>
             <div style={{ color: "#00C896", fontSize: 26, fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>{s.value}</div>
             <div style={{ color: "#fff", fontSize: 11, fontWeight: 600, marginTop: 4 }}>{s.label}</div>
-            <div style={{ color: "#444", fontSize: 10, marginTop: 2, fontFamily: "'DM Mono', monospace" }}>{s.sub}</div>
+            <div style={{ color: "#444", fontSize: 10, marginTop: 2 }}>{s.sub}</div>
           </div>
         ))}
       </div>
 
-      <div style={{
-        background: "#0f0f0f", borderRadius: 12, overflow: "hidden",
-        border: "1px solid #1a1a1a", marginBottom: 24
-      }}>
-        <div style={{
-          display: "grid", gridTemplateColumns: "1fr 80px 60px 80px 80px",
-          padding: "10px 16px", background: "#141414",
-          color: "#444", fontSize: 10, fontFamily: "'DM Mono', monospace", letterSpacing: 1,
-          borderBottom: "1px solid #1a1a1a"
-        }}>
-          <span>COURSE</span><span style={{ textAlign: "center" }}>GRADE</span>
-          <span style={{ textAlign: "center" }}>US CR</span>
-          <span style={{ textAlign: "center" }}>US GRADE</span>
-          <span style={{ textAlign: "center" }}>GPA PTS</span>
+      {/* Flag notice */}
+      {flaggedCount > 0 && (
+        <div style={{ background: "rgba(255,180,0,0.08)", border: "1px solid rgba(255,180,0,0.25)", borderRadius: 10, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <span style={{ color: "#FFC800", fontSize: 13 }}>
+            <strong>{flaggedCount} course{flaggedCount > 1 ? "s" : ""}</strong> may need review — titles look merged or grades are missing. Click the ✎ icon to edit.
+          </span>
         </div>
-        {courses.map((c, i) => (
-          <div key={c.code || i} style={{
-            display: "grid", gridTemplateColumns: "1fr 80px 60px 80px 80px",
-            padding: "12px 16px",
-            borderBottom: i < courses.length - 1 ? "1px solid #141414" : "none",
-          }}>
-            <div>
-              <div style={{ color: "#fff", fontSize: 13, fontWeight: 500 }}>{c.title || "N/A"}</div>
-              <div style={{ color: "#444", fontSize: 11, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{c.code || "N/A"}</div>
-            </div>
-            <div style={{ textAlign: "center", color: "#666", fontSize: 13, fontFamily: "'DM Mono', monospace", paddingTop: 4 }}>{c.grade || "N/A"}</div>
-            <div style={{ textAlign: "center", color: "#fff", fontSize: 13, fontFamily: "'DM Mono', monospace", paddingTop: 4 }}>{c.usCredits || c.credits || "3"}</div>
-            <div style={{ textAlign: "center", paddingTop: 4 }}>
-              <span style={{
-                padding: "2px 8px", borderRadius: 4,
-                background: (c.convertedGPA || c.gpa || 3.0) >= 3.7 ? "rgba(0,200,150,0.15)" : (c.convertedGPA || c.gpa || 3.0) >= 3.0 ? "rgba(255,200,0,0.15)" : "rgba(255,100,100,0.1)",
-                color: (c.convertedGPA || c.gpa || 3.0) >= 3.7 ? "#00C896" : (c.convertedGPA || c.gpa || 3.0) >= 3.0 ? "#FFC800" : "#FF6464",
-                fontSize: 12, fontFamily: "'DM Mono', monospace", fontWeight: 700
-              }}>{c.usGrade || "N/A"}</span>
-            </div>
-            <div style={{ textAlign: "center", color: "#fff", fontSize: 13, fontFamily: "'DM Mono', monospace", paddingTop: 4 }}>{(c.convertedGPA || c.gpa || 0).toFixed(1)}</div>
+      )}
+
+      {/* WES Formula toggle */}
+      <button
+        onClick={() => setShowFormula(f => !f)}
+        style={{ background: "transparent", border: "1px solid #222", borderRadius: 8, color: "#666", fontSize: 12, padding: "7px 14px", cursor: "pointer", marginBottom: 12, fontFamily: "'DM Mono', monospace", display: "flex", alignItems: "center", gap: 8 }}
+      >
+        <span>{showFormula ? "▾" : "▸"}</span> WES CONVERSION FORMULA — {scale.label}
+      </button>
+
+      {showFormula && (
+        <div style={{ background: "#0f0f0f", border: "1px solid #1a1a1a", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div style={{ color: "#666", fontSize: 11, marginBottom: 12, fontFamily: "'DM Mono', monospace" }}>{scale.note}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 80px 60px", gap: "4px 12px", fontSize: 11, fontFamily: "'DM Mono', monospace" }}>
+            <span style={{ color: "#444" }}>ORIG GRADE</span>
+            <span style={{ color: "#444" }}>% RANGE</span>
+            <span style={{ color: "#444" }}>US GRADE</span>
+            <span style={{ color: "#444" }}>GPA PTS</span>
+            {scale.rows.map(r => (
+              <React.Fragment key={r.orig}>
+                <span style={{ color: "#fff", fontWeight: 700 }}>{r.orig}</span>
+                <span style={{ color: "#555" }}>{r.range}</span>
+                <span style={{ color: "#00C896" }}>{r.wes}</span>
+                <span style={{ color: "#00C896" }}>{r.gpa.toFixed(1)}</span>
+              </React.Fragment>
+            ))}
           </div>
-        ))}
+          <div style={{ color: "#333", fontSize: 10, marginTop: 12, fontFamily: "'DM Mono', monospace" }}>
+            Formula: Cumulative GPA = Σ(GPA × Credits) ÷ Σ(Credits)
+          </div>
+        </div>
+      )}
+
+      {/* Course table */}
+      <div style={{ background: "#0f0f0f", borderRadius: 12, overflow: "hidden", border: "1px solid #1a1a1a", marginBottom: 16 }}>
+        {/* Header */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 52px 72px 64px 60px", padding: "10px 16px", background: "#141414", color: "#444", fontSize: 10, fontFamily: "'DM Mono', monospace", letterSpacing: 1, borderBottom: "1px solid #1a1a1a" }}>
+          <span>COURSE TITLE</span>
+          <span style={{ textAlign: "center" }}>GRADE</span>
+          <span style={{ textAlign: "center" }}>CR</span>
+          <span style={{ textAlign: "center" }}>US GRADE</span>
+          <span style={{ textAlign: "center" }}>GPA</span>
+          <span style={{ textAlign: "center" }}>EDIT</span>
+        </div>
+
+        {rows.map((c, i) => {
+          const suspicious = isSuspiciousTitle(c.title) || !c.grade;
+          const isEditing = editingIdx === i;
+          const gpa = c.convertedGPA || 0;
+
+          return (
+            <div key={c.code + i} style={{
+              borderBottom: i < rows.length - 1 ? "1px solid #141414" : "none",
+              background: suspicious ? "rgba(255,180,0,0.04)" : "transparent",
+              borderLeft: suspicious ? "3px solid rgba(255,180,0,0.4)" : "3px solid transparent",
+            }}>
+              {isEditing ? (
+                /* Edit mode */
+                <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ color: "#444", fontSize: 11, width: 60, fontFamily: "'DM Mono', monospace" }}>TITLE</span>
+                    <input
+                      value={editDraft.title}
+                      onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))}
+                      style={{ flex: 1, background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", color: "#fff", fontSize: 13, fontFamily: "inherit" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ color: "#444", fontSize: 11, width: 60, fontFamily: "'DM Mono', monospace" }}>GRADE</span>
+                    <input
+                      value={editDraft.grade}
+                      onChange={e => setEditDraft(d => ({ ...d, grade: e.target.value.toUpperCase() }))}
+                      placeholder="e.g. B, A+, 78"
+                      style={{ width: 80, background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", color: "#fff", fontSize: 13, fontFamily: "'DM Mono', monospace", textAlign: "center" }}
+                    />
+                    <span style={{ color: "#444", fontSize: 11, marginLeft: 16, fontFamily: "'DM Mono', monospace" }}>CREDITS</span>
+                    <input
+                      type="number"
+                      value={editDraft.credits}
+                      onChange={e => setEditDraft(d => ({ ...d, credits: e.target.value }))}
+                      style={{ width: 60, background: "#1a1a1a", border: "1px solid #333", borderRadius: 6, padding: "6px 10px", color: "#fff", fontSize: 13, fontFamily: "'DM Mono', monospace", textAlign: "center" }}
+                    />
+                    {editDraft.grade && (
+                      <span style={{ color: "#00C896", fontSize: 12, fontFamily: "'DM Mono', monospace", marginLeft: 8 }}>
+                        → {reConvertGrade(editDraft.grade, scaleType).usGrade} ({reConvertGrade(editDraft.grade, scaleType).convertedGPA.toFixed(1)})
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button onClick={() => setEditingIdx(null)} style={{ padding: "5px 14px", borderRadius: 6, background: "transparent", border: "1px solid #333", color: "#666", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                    <button onClick={() => deleteRow(i)} style={{ padding: "5px 14px", borderRadius: 6, background: "rgba(255,100,100,0.1)", border: "1px solid rgba(255,100,100,0.3)", color: "#FF6464", fontSize: 12, cursor: "pointer" }}>Delete</button>
+                    <button onClick={() => saveEdit(i)} style={{ padding: "5px 14px", borderRadius: 6, background: "rgba(0,200,150,0.15)", border: "1px solid #00C896", color: "#00C896", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>Save</button>
+                  </div>
+                </div>
+              ) : (
+                /* View mode */
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 72px 52px 72px 64px 60px", padding: "11px 16px", alignItems: "center" }}>
+                  <div>
+                    <div style={{ color: suspicious ? "#FFC800" : "#fff", fontSize: 13, fontWeight: 500 }}>
+                      {suspicious && <span style={{ marginRight: 6 }}>⚠</span>}
+                      {c.title}
+                    </div>
+                    <div style={{ color: "#333", fontSize: 10, fontFamily: "'DM Mono', monospace", marginTop: 2 }}>{c.code}</div>
+                  </div>
+                  <div style={{ textAlign: "center", color: "#666", fontSize: 13, fontFamily: "'DM Mono', monospace" }}>{c.grade || "—"}</div>
+                  <div style={{ textAlign: "center", color: "#fff", fontSize: 13, fontFamily: "'DM Mono', monospace" }}>{c.usCredits || 3}</div>
+                  <div style={{ textAlign: "center" }}>
+                    <span style={{ padding: "2px 8px", borderRadius: 4, background: `${gpaColor(gpa)}18`, color: gpaColor(gpa), fontSize: 12, fontFamily: "'DM Mono', monospace", fontWeight: 700 }}>
+                      {c.usGrade || "N/A"}
+                    </span>
+                  </div>
+                  <div style={{ textAlign: "center", color: gpaColor(gpa), fontSize: 13, fontFamily: "'DM Mono', monospace", fontWeight: 700 }}>{gpa > 0 ? gpa.toFixed(1) : "—"}</div>
+                  <div style={{ textAlign: "center" }}>
+                    <button onClick={() => startEdit(i)} style={{ background: "transparent", border: "none", color: suspicious ? "#FFC800" : "#444", cursor: "pointer", fontSize: 16, padding: 4, borderRadius: 4, lineHeight: 1 }}>✎</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
+      {/* Add course */}
+      <button onClick={addRow} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "transparent", border: "1px dashed #222", color: "#444", fontSize: 12, cursor: "pointer", fontFamily: "'DM Mono', monospace", marginBottom: 16 }}>
+        + ADD MISSING COURSE
+      </button>
+
+      {/* Actions */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <button onClick={() => { generatePDF(courses); onDownload(); }} style={{
-          padding: "14px", borderRadius: 10, background: "linear-gradient(135deg, #00C896, #00A878)",
-          border: "none", color: "#0a0a0a", fontSize: 14, fontWeight: 700,
-          cursor: "pointer", fontFamily: "'DM Mono', monospace", letterSpacing: 1
-        }}>⬇ DOWNLOAD PDF</button>
-        <button style={{
-          padding: "14px", borderRadius: 10, background: "transparent",
-          border: "1px solid #333", color: "#fff", fontSize: 14, fontWeight: 600,
-          cursor: "pointer", fontFamily: "'DM Mono', monospace"
-        }}>✎ EDIT MANUALLY</button>
+        <button
+          onClick={() => { generatePDF(rows); onDownload(); }}
+          style={{ padding: "14px", borderRadius: 10, background: "linear-gradient(135deg, #00C896, #00A878)", border: "none", color: "#0a0a0a", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}
+        >⬇ DOWNLOAD PDF</button>
+        <button
+          onClick={() => { generatePDF(rows); }}
+          style={{ padding: "14px", borderRadius: 10, background: "transparent", border: "1px solid #333", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Mono', monospace" }}
+        >⬇ DOWNLOAD (EDITED)</button>
       </div>
     </div>
   );
@@ -455,6 +709,9 @@ export default function App() {
     doc.text("Date Generated: " + new Date().toLocaleDateString(), margin, yPosition);
     yPosition += 8;
     doc.text("Format: WES Standard Transcript Report", margin, yPosition);
+    yPosition += 6;
+    const scaleUsed = coursesToExport[0]?.gradeScaleType || "unknown";
+    doc.text("Grade Scale: " + scaleUsed, margin, yPosition);
 
     // Add GPA section
     yPosition += 12;
@@ -466,7 +723,7 @@ export default function App() {
     doc.setFontSize(10);
     doc.setFont(undefined, "normal");
     const totalUSCredits = coursesToExport.reduce((s, c) => s + (c.usCredits || c.credits || 3), 0);
-    const weightedGPA = coursesToExport.reduce((s, c) => s + (c.gpa || 3.0) * (c.usCredits || c.credits || 3), 0) / totalUSCredits;
+    const weightedGPA = coursesToExport.reduce((s, c) => s + (c.convertedGPA || c.gpa || 0) * (c.usCredits || c.credits || 3), 0) / totalUSCredits;
     
     doc.text("Cumulative GPA (4.0 scale): " + weightedGPA.toFixed(2), margin + 5, yPosition);
     yPosition += 6;
@@ -500,7 +757,7 @@ export default function App() {
         yPosition = margin;
       }
       doc.text(course.code, margin, yPosition);
-      doc.text(course.title.substring(0, 25), margin + 20, yPosition);
+      doc.text((course.title || "").substring(0, 45), margin + 20, yPosition);
       doc.text(course.grade, margin + 100, yPosition);
       doc.text(course.usGrade || "N/A", margin + 120, yPosition);
       doc.text(course.usCredits.toString(), margin + 150, yPosition);
@@ -1304,6 +1561,9 @@ export default function App() {
 //     doc.text("Date Generated: " + new Date().toLocaleDateString(), margin, yPosition);
 //     yPosition += 8;
 //     doc.text("Format: WES Standard Transcript Report", margin, yPosition);
+    yPosition += 6;
+//     const scaleUsed = coursesToExport[0]?.gradeScaleType || "unknown";
+//     doc.text("Grade Scale: " + scaleUsed, margin, yPosition);
 
 //     // Add GPA section
 //     yPosition += 12;
@@ -1315,7 +1575,7 @@ export default function App() {
 //     doc.setFontSize(10);
 //     doc.setFont(undefined, "normal");
 //     const totalUSCredits = coursesToExport.reduce((s, c) => s + (c.usCredits || c.credits || 3), 0);
-//     const weightedGPA = coursesToExport.reduce((s, c) => s + (c.gpa || 3.0) * (c.usCredits || c.credits || 3), 0) / totalUSCredits;
+//     const weightedGPA = coursesToExport.reduce((s, c) => s + (c.convertedGPA || c.gpa || 0) * (c.usCredits || c.credits || 3), 0) / totalUSCredits;
     
 //     doc.text("Cumulative GPA (4.0 scale): " + weightedGPA.toFixed(2), margin + 5, yPosition);
 //     yPosition += 6;
@@ -1349,7 +1609,7 @@ export default function App() {
 //         yPosition = margin;
 //       }
 //       doc.text(course.code, margin, yPosition);
-//       doc.text(course.title.substring(0, 25), margin + 20, yPosition);
+//       doc.text((course.title || "").substring(0, 45), margin + 20, yPosition);
 //       doc.text(course.grade, margin + 100, yPosition);
 //       doc.text(course.usGrade || "N/A", margin + 120, yPosition);
 //       doc.text(course.usCredits.toString(), margin + 150, yPosition);
@@ -2145,6 +2405,9 @@ export default function App() {
 //     doc.text("Date Generated: " + new Date().toLocaleDateString(), margin, yPosition);
 //     yPosition += 8;
 //     doc.text("Format: WES Standard Transcript Report", margin, yPosition);
+    yPosition += 6;
+//     const scaleUsed = coursesToExport[0]?.gradeScaleType || "unknown";
+//     doc.text("Grade Scale: " + scaleUsed, margin, yPosition);
 
 //     // Add GPA section
 //     yPosition += 12;
@@ -2156,7 +2419,7 @@ export default function App() {
 //     doc.setFontSize(10);
 //     doc.setFont(undefined, "normal");
 //     const totalUSCredits = coursesToExport.reduce((s, c) => s + (c.usCredits || c.credits || 3), 0);
-//     const weightedGPA = coursesToExport.reduce((s, c) => s + (c.gpa || 3.0) * (c.usCredits || c.credits || 3), 0) / totalUSCredits;
+//     const weightedGPA = coursesToExport.reduce((s, c) => s + (c.convertedGPA || c.gpa || 0) * (c.usCredits || c.credits || 3), 0) / totalUSCredits;
     
 //     doc.text("Cumulative GPA (4.0 scale): " + weightedGPA.toFixed(2), margin + 5, yPosition);
 //     yPosition += 6;
@@ -2190,7 +2453,7 @@ export default function App() {
 //         yPosition = margin;
 //       }
 //       doc.text(course.code, margin, yPosition);
-//       doc.text(course.title.substring(0, 25), margin + 20, yPosition);
+//       doc.text((course.title || "").substring(0, 45), margin + 20, yPosition);
 //       doc.text(course.grade, margin + 100, yPosition);
 //       doc.text(course.usGrade || "N/A", margin + 120, yPosition);
 //       doc.text(course.usCredits.toString(), margin + 150, yPosition);
